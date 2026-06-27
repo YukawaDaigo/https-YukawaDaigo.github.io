@@ -1,71 +1,79 @@
-body {
-  font-family: Arial, sans-serif;
-  line-height: 1.6;
-  max-width: 900px;
-  margin: 40px auto;
-  padding: 0 20px;
-  color: #222;
+/* ============================================================
+   CONCEPT 01 — Minimal Academic（クラシック・ミニマル）
+   ------------------------------------------------------------
+   世界中のトップ研究者の個人ページに最も多い、王道の余白主義。
+   白背景・控えめな1色アクセント・読みやすさ最優先。
+   流行に左右されず、長く使える「外さない」デザイン。
+   ============================================================ */
+
+:root {
+  --ink:        #1a1a1a;   /* 本文 */
+  --muted:      #6b7280;   /* 補助テキスト */
+  --accent:     #8b2635;   /* 落ち着いた臙脂（リンク・見出し下線） */
+  --line:       #e5e7eb;   /* 罫線 */
+  --bg:         #ffffff;
+  --maxw:       720px;
 }
 
-header {
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 30px;
-  padding-bottom: 20px;
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0 auto;
+  max-width: var(--maxw);
+  padding: 4rem 1.5rem 6rem;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: "Charter", "Georgia", "Hiragino Mincho ProN", serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1 {
   font-size: 2.4rem;
-  margin-bottom: 5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.25rem;
 }
+
+/* 氏名直後の肩書きなどの段落 */
+h1 + p { color: var(--muted); margin: 0 0 2.5rem; }
 
 h2 {
-  margin-top: 40px;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 5px;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 3rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line);
 }
 
-nav a {
-  margin-right: 15px;
+p, li { margin: 0.4rem 0; }
+
+ul { padding-left: 1.2rem; }
+li::marker { color: var(--accent); }
+
+a {
+  color: var(--accent);
   text-decoration: none;
-  color: #0056b3;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: border-color .15s;
 }
+a:hover { border-bottom-color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-section {
-  margin-bottom: 30px;
-}
-.hero {
-  background: #f5f7fa;
-  padding: 50px 40px;
-  border-radius: 16px;
-  margin-bottom: 40px;
-}
-
-.hero-text {
-  max-width: 720px;
-}
-
-.subtitle {
-  font-size: 1.2rem;
-  color: #555;
-  margin-top: -5px;
-}
-
-nav {
-  margin-top: 25px;
-}
-
+/* ナビ（氏名の下に並ぶアンカー） */
+nav { margin: 1.5rem 0 0; display: flex; flex-wrap: wrap; gap: 1.25rem; }
 nav a {
-  display: inline-block;
-  margin-right: 12px;
-  margin-bottom: 10px;
-  padding: 8px 14px;
-  border: 1px solid #0056b3;
-  border-radius: 999px;
-  color: #0056b3;
-  text-decoration: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
 }
+nav a:hover { color: var(--ink); }
 
-nav a:hover {
-  background: #0056b3;
-  color: white;
-}
+footer { margin-top: 4rem; color: var(--muted); font-size: 0.85rem; }
