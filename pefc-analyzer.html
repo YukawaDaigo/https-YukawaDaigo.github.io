@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PEFC Analyzer — Overpotential Analysis | Daigo Yukawa</title>
+<meta name="description" content="Browser-based polymer electrolyte fuel cell (PEFC) overpotential analyzer. IR correction, Tafel fitting (OLS), and separation of reaction / activation / mass-transport overpotentials.">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+/* ============================================================
+   PEFC Analyzer — Digital Nature Theme（デジタルネイチャー）
+   理論実装は <script> 内のコメント Step 0〜12 を参照。
+   ============================================================ */
+:root{
+  --bg:#050507; --ink:#eef0f5; --muted:#8b90a0; --line:#1b1d27;
+  --panel:rgba(17,21,34,.55); --panel-solid:#0c0f18;
+  --cyan:#22d3ee; --violet:#a78bfa; --green:#34d399; --pink:#f0abfc; --amber:#fbbf24;
+  --maxw:1320px;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; color:var(--ink); background:var(--bg);
+  font-family:"Space Grotesk",system-ui,"Hiragino Kaku Gothic ProN",sans-serif;
+  font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  position:relative; overflow-x:hidden; min-height:100vh;
+}
+/* 粒子ノイズ */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+/* オーロラ光 */
+body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;opacity:.45;
+  background:radial-gradient(40vmax 40vmax at 12% 8%,rgba(99,102,241,.18),transparent 60%),
+             radial-gradient(40vmax 40vmax at 92% 22%,rgba(45,212,191,.14),transparent 60%),
+             radial-gradient(50vmax 50vmax at 55% 105%,rgba(236,72,153,.10),transparent 60%);
+  filter:blur(12px);}
+.wrap{position:relative;z-index:2;max-width:var(--maxw);margin:0 auto;padding:2.5rem 1.5rem 5rem;}
+
+/* ---- header ---- */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;}
+h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:700;letter-spacing:-.03em;line-height:1;margin:0;
+  background:linear-gradient(110deg,#a78bfa,#22d3ee,#34d399,#f0abfc,#a78bfa);
+  background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:holo 12s linear infinite;}
+@keyframes holo{to{background-position:300% 0;}}
+.subtitle{font-family:"JetBrains Mono",monospace;font-size:.72rem;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--muted);margin:.5rem 0 0;}
+.top-actions{display:flex;gap:.5rem;align-items:center;}
+
+/* ---- buttons / inputs ---- */
+button,.btn{font-family:inherit;cursor:pointer;border:1px solid var(--line);
+  background:rgba(255,255,255,.02);color:var(--ink);padding:.5rem .9rem;border-radius:10px;
+  font-size:.82rem;transition:.2s;}
+button:hover,.btn:hover{border-color:var(--cyan);box-shadow:0 0 16px rgba(34,211,238,.25);}
+button.primary{background:linear-gradient(120deg,rgba(34,211,238,.18),rgba(167,139,250,.18));
+  border-color:rgba(34,211,238,.45);font-weight:500;}
+button.go{background:linear-gradient(120deg,rgba(52,211,153,.22),rgba(34,211,238,.18));
+  border-color:rgba(52,211,153,.5);font-weight:600;}
+button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;border-color:var(--line);}
+button.mini{padding:.3rem .55rem;font-size:.72rem;border-radius:8px;}
+input[type=number],input[type=text]{font-family:"JetBrains Mono",monospace;background:#0a0d16;
+  border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:.4rem .55rem;width:100%;font-size:.82rem;}
+input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 2px rgba(34,211,238,.15);}
+label.fld{display:block;font-size:.72rem;color:var(--muted);margin:.6rem 0 .25rem;
+  font-family:"JetBrains Mono",monospace;letter-spacing:.03em;}
+
+/* ---- layout ---- */
+.grid{display:grid;grid-template-columns:330px 1fr;gap:1.25rem;align-items:start;}
+@media(max-width:880px){.grid{grid-template-columns:1fr;}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.1rem 1.2rem;
+  backdrop-filter:blur(12px);}
+.panel h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cyan);
+  margin:0 0 .8rem;font-weight:600;font-family:"JetBrains Mono",monospace;}
+.panel h2::before{content:"▍";color:var(--violet);margin-right:.4rem;}
+.panel + .panel{margin-top:1.1rem;}
+
+/* dropzone */
+#drop{border:1.5px dashed var(--line);border-radius:12px;padding:1.1rem;text-align:center;
+  color:var(--muted);font-size:.8rem;transition:.2s;cursor:pointer;}
+#drop.hot{border-color:var(--cyan);color:var(--ink);background:rgba(34,211,238,.06);}
+#drop b{color:var(--cyan);}
+
+/* file list */
+.flist{margin-top:.6rem;display:flex;flex-direction:column;gap:.3rem;max-height:200px;overflow:auto;}
+.frow{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border:1px solid transparent;
+  border-radius:8px;font-size:.8rem;}
+.frow.active{border-color:rgba(34,211,238,.4);background:rgba(34,211,238,.06);}
+.frow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+.frow .dot{width:.6rem;height:.6rem;border-radius:50%;flex:none;}
+.frow .rm{color:var(--muted);background:none;border:none;padding:0 .2rem;font-size:.9rem;}
+.frow .rm:hover{color:var(--pink);box-shadow:none;}
+.frow input[type=checkbox]{accent-color:var(--cyan);}
+
+/* graph mode tabs */
+.gmodes{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.8rem;}
+.gmodes button{font-family:"JetBrains Mono",monospace;font-size:.74rem;padding:.4rem .7rem;}
+.gmodes button.on{border-color:var(--cyan);background:rgba(34,211,238,.12);color:#fff;
+  box-shadow:0 0 14px rgba(34,211,238,.25);}
+.gmodes button.locked{opacity:.45;}
+
+#plot{width:100%;height:480px;border:1px solid var(--line);border-radius:14px;
+  background:rgba(8,10,18,.5);}
+.hint{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--muted);margin:.5rem 0 0;}
+.hint b{color:var(--amber);}
+
+/* summary table */
+table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.4rem;}
+th,td{padding:.45rem .55rem;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;}
+th{color:var(--muted);font-family:"JetBrains Mono",monospace;font-weight:500;text-transform:uppercase;
+  letter-spacing:.04em;font-size:.68rem;}
+td:first-child,th:first-child{text-align:left;}
+.badge{font-family:"JetBrains Mono",monospace;font-size:.68rem;padding:.15rem .5rem;border-radius:999px;}
+.badge.ok{color:var(--green);border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);}
+.badge.no{color:var(--muted);border:1px solid var(--line);}
+.tablewrap{overflow:auto;}
+
+/* theory accordion */
+details.theory{margin-top:1.1rem;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:.4rem 1.2rem;backdrop-filter:blur(12px);}
+details.theory summary{cursor:pointer;font-family:"JetBrains Mono",monospace;font-size:.8rem;
+  color:var(--cyan);padding:.7rem 0;letter-spacing:.06em;}
+details.theory .eq{font-family:"JetBrains Mono",monospace;font-size:.82rem;color:var(--ink);
+  background:#0a0d16;border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;margin:.4rem 0;}
+details.theory p{color:var(--muted);font-size:.82rem;margin:.3rem 0 .8rem;}
+.toast{position:fixed;left:50%;bottom:2rem;transform:translateX(-50%) translateY(20px);z-index:50;
+  background:var(--panel-solid);border:1px solid var(--cyan);color:var(--ink);padding:.7rem 1.2rem;
+  border-radius:12px;font-size:.85rem;box-shadow:0 0 24px rgba(34,211,238,.3);opacity:0;
+  transition:.3s;pointer-events:none;max-width:90vw;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{border-color:var(--pink);box-shadow:0 0 24px rgba(240,171,252,.3);}
+a.back{color:var(--muted);text-decoration:none;font-family:"JetBrains Mono",monospace;font-size:.75rem;}
+a.back:hover{color:var(--cyan);}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;}
+.exbtns{display:flex;flex-direction:column;gap:.5rem;}
+@media(prefers-reduced-motion:reduce){h1{animation:none;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← back to home</a>
+  <header>
+    <div>
+      <h1>PEFC&nbsp;Analyzer</h1>
+      <p class="subtitle" id="t_sub">Overpotential Analysis · IR-Free · Tafel · in your browser</p>
+    </div>
+    <div class="top-actions">
+      <button id="langBtn" class="mini">English</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- ============ LEFT CONTROL ============ -->
+    <div>
+      <div class="panel">
+        <h2 id="t_files">File Manager</h2>
+        <div id="drop"><span id="t_drop">Drag &amp; drop CSV here, or <b>click to import</b></span>
+          <input type="file" id="fileInput" accept=".csv,text/csv" multiple hidden></div>
+        <div class="flist" id="flist"></div>
+      </div>
+
+      <div class="panel">
+        <h2 id="t_params">Parameters (active file)</h2>
+        <label class="fld" id="t_area">Electrode Area [cm²]</label>
+        <input type="number" id="area" step="any" value="1.0">
+        <label class="fld" id="t_theo">Theoretical Voltage [V]</label>
+        <input type="number" id="theo" step="any" value="1.23">
+        <label class="fld" id="t_range">Tafel fit range (log₁₀ j)</label>
+        <div class="row2">
+          <input type="number" id="fmin" step="any" value="-2.0">
+          <input type="number" id="fmax" step="any" value="-1.0">
+        </div>
+        <button class="go" id="fitBtn" style="width:100%;margin-top:.8rem" disabled>2 · Run Tafel Fit</button>
+        <button class="mini" id="clickBtn" style="width:100%;margin-top:.5rem" disabled>◎ Pick range on graph (2 clicks)</button>
+      </div>
+
+      <div class="panel">
+        <h2 id="t_export">Export</h2>
+        <div class="exbtns">
+          <button class="mini" id="expActive" disabled>Export active CSV</button>
+          <button class="mini" id="expBatch" disabled>Batch export all</button>
+          <button class="mini" id="expSummary" disabled>Export summary CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RIGHT VIEW ============ -->
+    <div>
+      <div class="panel">
+        <div class="gmodes" id="gmodes"></div>
+        <div id="plot"></div>
+        <p class="hint" id="t_hint">Import a CSV (columns: <b>Current[A], Voltage[V], Resistance[mΩ]</b>) to begin.</p>
+      </div>
+
+      <div class="panel" style="margin-top:1.1rem">
+        <h2 id="t_summary">Analysis Summary (all files)</h2>
+        <div class="tablewrap">
+          <table id="sumtable">
+            <thead><tr id="sumhead"></tr></thead>
+            <tbody id="sumbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <details class="theory">
+        <summary id="t_theory">▾ Theory &amp; equations (実装根拠)</summary>
+        <div id="theoryBody"></div>
+      </details>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   PEFC Analyzer — client-side implementation
+   理論はマニュアル(PDF) §1〜§3 / 元Pythonコードに完全準拠。
+   各 Step は理論解説マニュアルの「3. データ処理アルゴリズム」に対応。
+   ============================================================ */
+
+/* ---------- i18n ---------- */
+const LANG = {
+  EN:{sub:"Overpotential Analysis · IR-Free · Tafel · in your browser",
+    files:"File Manager",drop:'Drag & drop CSV here, or <b>click to import</b>',
+    params:"Parameters (active file)",area:"Electrode Area [cm²]",theo:"Theoretical Voltage [V]",
+    range:"Tafel fit range (log₁₀ j)",fit:"2 · Run Tafel Fit",pick:"◎ Pick range on graph (2 clicks)",
+    export:"Export",expA:"Export active CSV",expB:"Batch export all",expS:"Export summary CSV",
+    summary:"Analysis Summary (all files)",theory:"▾ Theory & equations",
+    hint:'Import a CSV (columns: <b>Current[A], Voltage[V], Resistance[mΩ]</b>) to begin.',
+    pickHint:'Click <b>2 points</b> on the Tafel plot to set the fit range.',
+    lang:"日本語",
+    cols:["File","Area [cm²]","Slope b [V/dec]","Intercept a [V]","R²","Status"],
+    st_ok:"Completed",st_no:"Pending",
+    g:{jv:"j–V",jv_ir:"j–V (IR-Free)",tafel:"Tafel",eta_react:"η_react",eta_act:"η_act",eta_mt:"η_mt"},
+    err_cols:"needs ≥3 numeric columns (Current, Voltage, Resistance).",
+    err_empty:"no valid numeric rows found.",
+    err_area:"Electrode area must be greater than 0.",
+    err_pts:"Not enough data points in the selected range (need ≥2).",
+    ok_fit:"Tafel fit done",imp:"file(s) imported",need_fit:"Run the Tafel fit first."},
+  JA:{sub:"過電圧解析 · IR-Free · Tafel · ブラウザ完結",
+    files:"ファイル管理",drop:'CSVをドラッグ&ドロップ、または<b>クリックで読込</b>',
+    params:"パラメータ（選択中ファイル）",area:"電極面積 [cm²]",theo:"理論電圧 [V]",
+    range:"Tafel近似範囲（log₁₀ j）",fit:"2 · 近似実行",pick:"◎ グラフ上で範囲指定（2クリック）",
+    export:"書き出し",expA:"選択中をCSV出力",expB:"全件一括出力",expS:"サマリーをCSV出力",
+    summary:"解析結果サマリー（全ファイル）",theory:"▾ 理論と数式（実装根拠）",
+    hint:'CSV（列: <b>電流[A], 電圧[V], 内部抵抗[mΩ]</b>）を読み込んで開始します。',
+    pickHint:'Tafelプロット上を<b>2点クリック</b>すると近似範囲が入力されます。',
+    lang:"English",
+    cols:["ファイル","面積 [cm²]","Tafel勾配 b [V/dec]","切片 a [V]","R²","状態"],
+    st_ok:"完了",st_no:"未実行",
+    g:{jv:"j–V",jv_ir:"j–V (IR-Free)",tafel:"Tafel",eta_react:"η_react",eta_act:"η_act",eta_mt:"η_mt"},
+    err_cols:"には数値3列（電流・電圧・抵抗）が必要です。",
+    err_empty:"有効な数値データが見つかりませんでした。",
+    err_area:"電極面積は0より大きい値を入力してください。",
+    err_pts:"指定範囲内のデータ点が不足しています（2点以上必要）。",
+    ok_fit:"Tafel近似が完了しました",imp:"件を読み込みました",need_fit:"先にTafel近似を実行してください。"}
+};
+let lang = "JA";
+const T = ()=>LANG[lang];
+
+/* ---------- state ---------- */
+const PALETTE = ["#22d3ee","#a78bfa","#34d399","#f0abfc","#fbbf24","#fb7185","#60a5fa","#4ade80"];
+let files = [];          // {name,cur,vol,res,area,theo,fmin,fmax,slope,intercept,r2,fitDone,visible,color}
+let active = -1;
+let graph = "jv";
+let clickMode = false, clickPts = [];
+let colorIx = 0;
+
+const $ = id => document.getElementById(id);
+
+/* ---------- math: OLS linear regression (理論 §2.1) ---------- */
+function linregress(x,y){
+  const n=x.length; let sx=0,sy=0,sxx=0,sxy=0;
+  for(let i=0;i<n;i++){sx+=x[i];sy+=y[i];sxx+=x[i]*x[i];sxy+=x[i]*y[i];}
+  const denom=n*sxx-sx*sx;
+  const slope=(n*sxy-sx*sy)/denom;
+  const intercept=(sy-slope*sx)/n;
+  // R² = 1 - SSres/SStot
+  const my=sy/n; let ssr=0,sst=0;
+  for(let i=0;i<n;i++){const f=slope*x[i]+intercept;ssr+=(y[i]-f)**2;sst+=(y[i]-my)**2;}
+  const r2 = sst>0 ? 1-ssr/sst : 0;
+  return {slope,intercept,r2};
+}
+const log10 = v => Math.log(v)/Math.LN10;
+
+/* ---------- CSV parsing (Step 1: 読込 + 単位変換) ---------- */
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  // delimiter auto-detect (comma > tab > semicolon)
+  const sample = lines.slice(0,5).join("\n");
+  const delim = (sample.match(/\t/g)||[]).length > (sample.match(/,/g)||[]).length ? "\t"
+              : (sample.match(/;/g)||[]).length > (sample.match(/,/g)||[]).length ? ";" : ",";
+  const cur=[],vol=[],res=[];
+  for(const line of lines){
+    const c = line.split(delim);
+    if(c.length<3) continue;
+    const a=parseFloat(c[0]), b=parseFloat(c[1]), d=parseFloat(c[2]);
+    if(!isFinite(a)||!isFinite(b)||!isFinite(d)) continue; // 非数値行(=ヘッダ含む)を除外
+    cur.push(a); vol.push(b);
+    res.push(d*1e-3);            // Step 1: R[Ω] = R[mΩ] × 10⁻³
+  }
+  return {cur,vol,res};
+}
+
+/* ---------- per-file derived arrays (Steps 2,3,5,7,9,11) ---------- */
+function derive(d){
+  const n=d.cur.length;
+  const j=new Array(n), irf=new Array(n);
+  for(let i=0;i<n;i++){
+    j[i]=d.cur[i]/d.area;                       // Step 2: j = I / A
+    irf[i]=d.vol[i]+(j[i]*d.area*d.res[i]);     // Step 3: V_IR-Free = V_raw + j·A·R
+  }
+  return {j,irf};
+}
+
+/* ---------- Tafel fit (Step 4) ---------- */
+function runFit(showMsg=true){
+  if(active<0) return;
+  const d=files[active];
+  const area=parseFloat($("area").value);
+  if(!(area>0)){ toast(T().err_area,true); return; }
+  d.area=area;
+  d.theo=parseFloat($("theo").value);
+  d.fmin=parseFloat($("fmin").value);
+  d.fmax=parseFloat($("fmax").value);
+
+  const {j,irf}=derive(d);
+  const lo=Math.min(d.fmin,d.fmax), hi=Math.max(d.fmin,d.fmax);
+  const X=[],Y=[];
+  for(let i=0;i<j.length;i++){
+    if(j[i]<=0) continue;
+    const lj=log10(j[i]);
+    if(lj>=lo && lj<=hi){ X.push(lj); Y.push(irf[i]); }   // 電荷移動律速領域を抽出
+  }
+  if(X.length<2){ toast(T().err_pts,true); return; }
+  const {slope,intercept,r2}=linregress(X,Y);             // Step 4: OLS
+  d.slope=slope; d.intercept=intercept; d.r2=r2; d.fitDone=true;
+  if(showMsg) toast(`${T().ok_fit} · R²=${r2.toFixed(4)}`);
+  refreshAll();
+}
+
+/* ---------- import ---------- */
+function handleFiles(fileList){
+  let added=0, pending=fileList.length;
+  if(!pending) return;
+  Array.from(fileList).forEach(f=>{
+    const rd=new FileReader();
+    rd.onload=()=>{
+      const {cur,vol,res}=parseCSV(rd.result);
+      if(cur.length===0){ toast(`${f.name}: ${T().err_empty}`,true); }
+      else{
+        files.push({name:f.name,cur,vol,res,area:1.0,theo:1.23,fmin:-2.0,fmax:-1.0,
+          slope:null,intercept:null,r2:null,fitDone:false,visible:true,
+          color:PALETTE[colorIx++%PALETTE.length]});
+        active=files.length-1; added++;
+      }
+      if(--pending===0){ if(added) toast(`${added} ${T().imp}`); loadActive(); refreshAll(); }
+    };
+    rd.readAsText(f);
+  });
+}
+
+/* ---------- UI sync ---------- */
+function loadActive(){
+  if(active<0) return;
+  const d=files[active];
+  $("area").value=d.area; $("theo").value=d.theo;
+  $("fmin").value=d.fmin; $("fmax").value=d.fmax;
+}
+function saveActiveParams(){
+  if(active<0) return;
+  const d=files[active];
+  const a=parseFloat($("area").value); if(a>0) d.area=a;
+  d.theo=parseFloat($("theo").value);
+  d.fmin=parseFloat($("fmin").value); d.fmax=parseFloat($("fmax").value);
+}
+function refreshAll(){ renderFileList(); renderSummary(); plot(); syncButtons(); }
+function syncButtons(){
+  const has=files.length>0, act=active>=0;
+  $("fitBtn").disabled=!act; $("clickBtn").disabled=!act;
+  $("expActive").disabled=!act; $("expBatch").disabled=!has; $("expSummary").disabled=!has;
+}
+
+function renderFileList(){
+  const box=$("flist"); box.innerHTML="";
+  files.forEach((d,i)=>{
+    const row=document.createElement("div");
+    row.className="frow"+(i===active?" active":"");
+    const cb=document.createElement("input");
+    cb.type="checkbox"; cb.checked=d.visible;
+    cb.onchange=()=>{d.visible=cb.checked;plot();};
+    const dot=document.createElement("span"); dot.className="dot"; dot.style.background=d.color;
+    const nm=document.createElement("span"); nm.className="nm"; nm.textContent=d.name; nm.title=d.name;
+    nm.onclick=()=>{saveActiveParams();active=i;loadActive();refreshAll();};
+    const rm=document.createElement("button"); rm.className="rm"; rm.textContent="✕";
+    rm.onclick=()=>{files.splice(i,1); if(active>=files.length)active=files.length-1;
+      if(active<0){} else loadActive(); refreshAll();};
+    row.append(cb,dot,nm,rm); box.appendChild(row);
+  });
+}
+
+/* ---------- summary table (matches Python summary) ---------- */
+function renderSummary(){
+  $("sumhead").innerHTML = T().cols.map(c=>`<th>${c}</th>`).join("");
+  const body=$("sumbody"); body.innerHTML="";
+  files.forEach(d=>{
+    const tr=document.createElement("tr");
+    const f=(v,p=4)=>d.fitDone?v.toFixed(p):"—";
+    const badge=d.fitDone?`<span class="badge ok">${T().st_ok}</span>`:`<span class="badge no">${T().st_no}</span>`;
+    tr.innerHTML=`<td>${d.name}</td><td>${d.area.toFixed(2)}</td>
+      <td>${f(d.slope)}</td><td>${f(d.intercept)}</td><td>${f(d.r2)}</td><td>${badge}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+/* ---------- graph mode buttons ---------- */
+const GMODES=["jv","jv_ir","tafel","eta_react","eta_act","eta_mt"];
+function renderGModes(){
+  const box=$("gmodes"); box.innerHTML="";
+  GMODES.forEach(m=>{
+    const b=document.createElement("button");
+    b.textContent=T().g[m];
+    b.className=(m===graph?"on":"")+((m.startsWith("eta"))?" etamode":"");
+    b.onclick=()=>{graph=m;renderGModes();plot();};
+    box.appendChild(b);
+  });
+}
+
+/* ---------- plotting (Plotly · digital-nature theme) ---------- */
+function baseLayout(xt,yt,xlog){
+  return {
+    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(8,10,18,.35)",
+    font:{family:"JetBrains Mono, monospace",color:"#c8ccd8",size:12},
+    margin:{l:64,r:20,t:16,b:52},
+    xaxis:{title:{text:xt},type:xlog?"log":"linear",gridcolor:"#1b1d27",zerolinecolor:"#283049",
+      linecolor:"#2a3350",ticks:"outside",tickcolor:"#2a3350"},
+    yaxis:{title:{text:yt},gridcolor:"#1b1d27",zerolinecolor:"#283049",
+      linecolor:"#2a3350",ticks:"outside",tickcolor:"#2a3350"},
+    legend:{bgcolor:"rgba(8,10,18,.5)",bordercolor:"#1b1d27",borderwidth:1,font:{size:11}},
+    hovermode:"closest"
+  };
+}
+function plot(){
+  const traces=[]; let xt="Current Density j [A/cm²]", yt="", xlog=false;
+  const vis=files.filter(d=>d.visible);
+  vis.forEach(d=>{
+    const {j,irf}=derive(d);
+    const n=j.length, jv=[],vv=[],ji=[],ir=[],jp=[],lj=[];
+    for(let i=0;i<n;i++){
+      jv.push(j[i]); vv.push(d.vol[i]); ir.push(irf[i]);
+      if(j[i]>0){ jp.push(j[i]); lj.push(log10(j[i])); }
+    }
+    const C=d.color, base={mode:"lines+markers",name:d.name,marker:{size:6,color:C},
+      line:{color:C,width:2},hovertemplate:"%{x:.4g}, %{y:.4g}<extra>"+d.name+"</extra>"};
+    if(graph==="jv"){ yt="Voltage [V]";
+      traces.push({...base,x:jv,y:vv});
+    }else if(graph==="jv_ir"){ yt="IR-Free Voltage [V]";
+      traces.push({...base,x:jv,y:ir});
+    }else if(graph==="tafel"){ yt="IR-Free Voltage [V]"; xlog=true;
+      const jpos=[],vpos=[]; for(let i=0;i<n;i++) if(j[i]>0){jpos.push(j[i]);vpos.push(irf[i]);}
+      traces.push({...base,mode:"markers",x:jpos,y:vpos});
+      if(d.fitDone){ // 近似直線: V = b·log10(j) + a
+        const lo=Math.min(d.fmin,d.fmax)-0.5, hi=Math.max(d.fmin,d.fmax)+0.5;
+        const xf=[],yf=[]; for(let k=0;k<=100;k++){const L=lo+(hi-lo)*k/100;const x=Math.pow(10,L);
+          xf.push(x); yf.push(d.slope*L+d.intercept);}
+        traces.push({x:xf,y:yf,mode:"lines",line:{color:C,width:2,dash:"dash"},
+          name:d.name+" fit",hoverinfo:"skip",showlegend:false});
+      }
+    }else if(graph.startsWith("eta")){
+      if(!d.fitDone) return; // 理論注記: η_act/η_mt は近似必須
+      const er=[],ea=[],em=[],jx=[];
+      for(let i=0;i<n;i++){ if(j[i]<=0) continue;
+        const L=log10(j[i]);
+        const eta_react=d.theo-irf[i];            // Step 7
+        const eta_act=d.theo-(d.slope*L+d.intercept); // Step 9
+        const eta_mt=eta_react-eta_act;           // Step 11
+        jx.push(j[i]); er.push(eta_react); ea.push(eta_act); em.push(eta_mt);
+      }
+      if(graph==="eta_react"){ yt="η_react [V]"; traces.push({...base,x:jx,y:er}); }
+      if(graph==="eta_act"){ yt="η_act [V]"; traces.push({...base,x:jx,y:ea}); }
+      if(graph==="eta_mt"){ yt="η_mt [V]"; traces.push({...base,x:jx,y:em}); }
+    }
+  });
+  const layout=baseLayout(xt,yt,xlog);
+  Plotly.react("plot",traces,layout,{responsive:true,displaylogo:false,
+    modeBarButtonsToRemove:["select2d","lasso2d"]});
+  // click-to-pick range (Tafel only)
+  const gd=$("plot");
+  gd.removeAllListeners && gd.removeAllListeners("plotly_click");
+  gd.on("plotly_click",ev=>{
+    if(!clickMode||graph!=="tafel") return;
+    const x=ev.points[0].x; if(x<=0) return;
+    clickPts.push(log10(x));
+    if(clickPts.length===2){
+      const a=Math.min(...clickPts),b=Math.max(...clickPts);
+      $("fmin").value=a.toFixed(2); $("fmax").value=b.toFixed(2);
+      clickMode=false; clickPts=[]; $("clickBtn").classList.remove("on");
+      runFit();
+    }
+  });
+}
+
+/* ---------- export (matches Python _get_export_df) ---------- */
+function buildExportCSV(d){
+  const n=d.cur.length;
+  const head=["Current[A]","j[A/cm2]","Voltage[V]","Res[Ohm]","IR-Free[V]","Eta_react[V]","Eta_act[V]","Eta_mt[V]"];
+  const rows=[head.join(",")];
+  for(let i=0;i<n;i++){
+    const j=d.cur[i]/d.area;
+    const irf=d.vol[i]+(j*d.area*d.res[i]);
+    const eta_react=d.theo-irf;
+    let eta_act=NaN, eta_mt=NaN;
+    if(d.fitDone && j>0){ const L=log10(j); eta_act=d.theo-(d.slope*L+d.intercept); eta_mt=eta_react-eta_act; }
+    const g=v=>isFinite(v)?v:"";
+    rows.push([d.cur[i],j,d.vol[i],d.res[i],irf,eta_react,g(eta_act),g(eta_mt)].join(","));
+  }
+  return rows.join("\r\n");
+}
+function buildSummaryCSV(){
+  const head=["File Name","Area [cm2]","Theoretical Voltage [V]","Tafel Slope b [V/dec]","Intercept a [V]","R2","Status"];
+  const rows=[head.join(",")];
+  files.forEach(d=>{
+    rows.push([d.name,d.area,d.theo,
+      d.fitDone?d.slope:"",d.fitDone?d.intercept:"",d.fitDone?d.r2:"",
+      d.fitDone?"Completed":"Pending"].join(","));
+  });
+  return rows.join("\r\n");
+}
+function download(name,text){
+  const blob=new Blob(["﻿"+text],{type:"text/csv;charset=utf-8;"}); // utf-8-sig 相当
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ---------- theory panel ---------- */
+function renderTheory(){
+  $("theoryBody").innerHTML=`
+   <p>本ツールはマニュアル §1〜§3 の数理モデルに完全準拠して計算します。</p>
+   <div class="eq">Step 1 &nbsp; R [Ω] = R [mΩ] × 10⁻³</div>
+   <div class="eq">Step 2 &nbsp; j = I / A</div>
+   <div class="eq">Step 3 &nbsp; V<sub>IR-Free</sub> = V<sub>raw</sub> + ( j × A × R )</div>
+   <div class="eq">Step 4 &nbsp; V<sub>IR-Free</sub> = b · log₁₀ j + a &nbsp;(OLS, fmin ≤ log₁₀ j ≤ fmax)</div>
+   <div class="eq">Step 5 &nbsp; R² = 1 − Σ(yᵢ − f(xᵢ))² / Σ(yᵢ − ȳ)²</div>
+   <div class="eq">η<sub>react</sub> = V<sub>theo</sub> − V<sub>IR-Free</sub></div>
+   <div class="eq">η<sub>act</sub> = V<sub>theo</sub> − ( b · log₁₀ j + a )</div>
+   <div class="eq">η<sub>mt</sub> = η<sub>react</sub> − η<sub>act</sub></div>
+   <p>※ η_act / η_mt の表示には Tafel 近似（Run Tafel Fit）が必須です。</p>`;
+}
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg,err=false){
+  const t=$("toast"); t.innerHTML=msg; t.className="toast show"+(err?" err":"");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.className="toast",2600);
+}
+
+/* ---------- language ---------- */
+function applyLang(){
+  const d=T();
+  $("t_sub").textContent=d.sub; $("t_files").textContent=d.files;
+  $("t_drop").innerHTML=d.drop; $("t_params").textContent=d.params;
+  $("t_area").textContent=d.area; $("t_theo").textContent=d.theo; $("t_range").textContent=d.range;
+  $("fitBtn").textContent=d.fit; $("clickBtn").textContent=d.pick;
+  $("t_export").textContent=d.export; $("expActive").textContent=d.expA;
+  $("expBatch").textContent=d.expB; $("expSummary").textContent=d.expS;
+  $("t_summary").textContent=d.summary; $("t_theory").textContent="▾ "+d.theory;
+  $("langBtn").textContent=d.lang;
+  $("t_hint").innerHTML = clickMode ? d.pickHint : d.hint;
+  renderGModes(); renderSummary(); renderTheory();
+}
+
+/* ---------- wire up ---------- */
+$("fileInput").onchange=e=>handleFiles(e.target.files);
+const dz=$("drop");
+dz.onclick=()=>$("fileInput").click();
+dz.ondragover=e=>{e.preventDefault();dz.classList.add("hot");};
+dz.ondragleave=()=>dz.classList.remove("hot");
+dz.ondrop=e=>{e.preventDefault();dz.classList.remove("hot");handleFiles(e.dataTransfer.files);};
+["area","theo","fmin","fmax"].forEach(id=>$(id).addEventListener("change",saveActiveParams));
+$("fitBtn").onclick=()=>runFit();
+$("clickBtn").onclick=function(){
+  clickMode=!clickMode; clickPts=[]; this.classList.toggle("on",clickMode);
+  if(clickMode){ graph="tafel"; renderGModes(); plot(); }
+  $("t_hint").innerHTML = clickMode ? T().pickHint : T().hint;
+};
+$("expActive").onclick=()=>{ if(active<0)return; const d=files[active];
+  download("analyzed_"+d.name, buildExportCSV(d)); };
+$("expBatch").onclick=()=>{ files.forEach((d,i)=>setTimeout(()=>download("analyzed_"+d.name,buildExportCSV(d)), i*250)); };
+$("expSummary").onclick=()=>download("analysis_summary.csv", buildSummaryCSV());
+$("langBtn").onclick=()=>{ lang=(lang==="JA"?"EN":"JA"); applyLang(); };
+
+/* init */
+applyLang(); renderGModes(); plot(); syncButtons();
+</script>
+</body>
+</html>
