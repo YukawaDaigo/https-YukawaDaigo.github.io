@@ -8,12 +8,18 @@
   <meta name="description" content="Daigo Yukawa — Student researcher on polymer electrolyte fuel cells and catalyst layer design for improving platinum utilization.">
   <meta name="author" content="Daigo Yukawa">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0c11" media="(prefers-color-scheme: dark)">
   <meta property="og:title" content="Daigo Yukawa | Research Portfolio">
   <meta property="og:description" content="Student researcher on polymer electrolyte fuel cells and catalyst layer design.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://yukawadaigo.github.io">
 
   <title>Daigo | Research Portfolio</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -31,10 +37,10 @@
 
       <nav>
         <a href="#about">About</a>
-        <a href="#research-interests">Research-Interests</a>
-        <a href="#research-methods">Research-Methods</a>
+        <a href="#research-interests">Research Interests</a>
+        <a href="#research-methods">Research Methods</a>
         <a href="#news">News</a>
-        <a href="#research-tools">Research-Tools</a>
+        <a href="#research-tools">Research Tools</a>
         <a href="#contact">Contact</a>
       </nav>
     </div>
@@ -49,13 +55,13 @@
     </section>
 
     <section id="research-interests">
-      <h2>Research-Interests</h2>
+      <h2>Research Interests</h2>
       <p>・Polymer Electrolyte Fuel Cells</p>
       <p>・Catalyst Layer</p>
     </section>
 
     <section id="research-methods">
-      <h2>Research-Methods</h2>
+      <h2>Research Methods</h2>
       <p>・Numerical Simulation</p>
       <p>・Electrochemical Characterization</p>
       <p>・Performance Evaluation</p>
@@ -64,21 +70,27 @@
     <section id="news">
       <h2>News</h2>
       <ul>
-        <p>・This page will be updated with my latest research activities, conference presentations, and achievements.</p>
+        <li>This page will be updated with my latest research activities, conference presentations, and achievements.</li>
       </ul>
     </section>
 
     <section id="research-tools">
-      <h2>Research-Tools</h2>
+      <h2>Research Tools</h2>
       <ul>
-        <p>・<a href="pefc-analyzer.html">PEFC Analyzer(20260627~)</a> — Browser-based overpotential analysis for polymer electrolyte fuel cells (IR correction, Tafel fitting, separation of reaction / activation / mass-transport overpotentials).</p>
+        <li><a href="pefc-analyzer.html">PEFC Analyzer</a> — Browser-based overpotential analysis for polymer electrolyte fuel cells (IR correction, Tafel fitting, and separation of reaction / activation / mass-transport overpotentials).</li>
       </ul>
     </section>
 
     <section id="contact">
       <h2>Contact</h2>
-      <p>Email: my-email@example.com</p>
+      <p>Email: <a href="mailto:your-email@example.com">your-email@example.com</a></p>
     </section>
   </main>
+
+  <footer>
+    <p>© <span id="year">2026</span> Daigo Yukawa</p>
+  </footer>
+
+  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
 </body>
 </html>
