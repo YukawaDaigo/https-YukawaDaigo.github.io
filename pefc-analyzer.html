@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 /* ============================================================
    PEFC Analyzer — homepage-matched theme
@@ -161,6 +162,17 @@ a.back{color:var(--muted);text-decoration:none;font-size:.82rem;}
 a.back:hover{color:var(--accent);}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;}
 .exbtns{display:flex;flex-direction:column;gap:.5rem;}
+/* axis settings */
+details#axesPanel summary{cursor:pointer;font-weight:600;font-size:.9rem;color:var(--accent);list-style:none;}
+details#axesPanel summary::-webkit-details-marker{display:none;}
+details#axesPanel summary::before{content:"▸ ";}
+details#axesPanel[open] summary::before{content:"▾ ";}
+.axwrap{margin-top:.8rem;display:flex;flex-direction:column;gap:.7rem;}
+.axline{display:flex;flex-wrap:wrap;align-items:flex-end;gap:.5rem;}
+.axlabel{font-weight:700;color:var(--accent);min-width:1.1rem;align-self:center;}
+.axline label{display:flex;flex-direction:column;font-size:.68rem;color:var(--muted);gap:.15rem;}
+.axline input{width:4.8rem;}
+.axbtns{display:flex;gap:.5rem;}
 @media(prefers-reduced-motion:reduce){*{transition-duration:.001ms!important;}}
 </style>
 </head>
@@ -221,6 +233,31 @@ a.back:hover{color:var(--accent);}
         <p class="hint" id="t_hint">Import a CSV (columns: <b>Current[A], Voltage[V], Resistance[mΩ]</b>) to begin.</p>
       </div>
 
+      <details class="panel" id="axesPanel" style="margin-top:1.1rem">
+        <summary id="t_axes">Graph axis settings</summary>
+        <div class="axwrap">
+          <div class="axline">
+            <span class="axlabel">X</span>
+            <label><span class="axlbl" data-k="axMin">min</span><input type="number" step="any" id="axXmin"></label>
+            <label><span class="axlbl" data-k="axMax">max</span><input type="number" step="any" id="axXmax"></label>
+            <label><span class="axlbl" data-k="axMajor">major</span><input type="number" step="any" id="axXmajor"></label>
+            <label><span class="axlbl" data-k="axMinor">minor</span><input type="number" step="any" id="axXminor"></label>
+          </div>
+          <div class="axline">
+            <span class="axlabel">Y</span>
+            <label><span class="axlbl" data-k="axMin">min</span><input type="number" step="any" id="axYmin"></label>
+            <label><span class="axlbl" data-k="axMax">max</span><input type="number" step="any" id="axYmax"></label>
+            <label><span class="axlbl" data-k="axMajor">major</span><input type="number" step="any" id="axYmajor"></label>
+            <label><span class="axlbl" data-k="axMinor">minor</span><input type="number" step="any" id="axYminor"></label>
+          </div>
+          <div class="axbtns">
+            <button class="go mini" id="axApply">Apply</button>
+            <button class="mini" id="axReset">Auto</button>
+          </div>
+          <p class="hint" id="t_axHint"></p>
+        </div>
+      </details>
+
       <div class="panel" style="margin-top:1.1rem">
         <h2 id="t_summary">Analysis Summary (all files)</h2>
         <div class="tablewrap">
@@ -251,18 +288,21 @@ a.back:hover{color:var(--accent);}
 /* ---------- i18n ---------- */
 const LANG = {
   EN:{
+    sub:"Overpotential analysis · IR-free · Tafel · in your browser",
     files:"File Manager",drop:'Drag & drop CSV here, or <b>click to import</b>',
-    params:"Parameters (active file)",area:"Electrode Area [cm²]",theo:"Theoretical Voltage [V]",
+    params:"Parameters (active file)",area:"Electrode Area [cm²]",theo:"Theoretical Voltage E₀ [V]",
     range:"Tafel fit range (log₁₀ j)",fit:"2 · Run Tafel Fit (active)",fitAll:"⚡ Fit ALL files",
     pick:"◎ Pick range on graph (2 clicks)",
-    export:"Export",expA:"Export active CSV",expB:"Batch export all",expS:"Export summary CSV",
+    axes:"Graph axis settings",axMin:"min",axMax:"max",axMajor:"major",axMinor:"minor",
+    axApply:"Apply",axReset:"Auto",axHintLog:"On the Tafel plot the x-axis is log₁₀; major/minor are in decades.",
+    export:"Export",expA:"Export active (.xlsx)",expB:"Batch export all",expS:"Export summary (.xlsx)",
     summary:"Analysis Summary (all files)",theory:"▾ Theory & equations",
     hint:'Import a CSV (columns: <b>Current[A], Voltage[V], Resistance[mΩ]</b>) to begin.',
     pickHint:'Click <b>2 points</b> on the Tafel plot to set the fit range.',
     lang:"日本語",
-    cols:["File","Area [cm²]","Slope b [V/dec]","Intercept a [V]","R²","Status"],
+    cols:["File","Area [cm²]","Tafel slope b [V/dec]","Intercept a [V]","R²","Status"],
     st_ok:"Completed",st_no:"Pending",
-    g:{jv:"j–V",jv_ir:"j–V (IR-Free)",tafel:"Tafel",eta_react:"η_react",eta_act:"η_act",eta_mt:"η_mt"},
+    g:{jv:"j–V",jv_ir:"j–V (IR-free)",eta_react:"j–η<sub>react</sub>",tafel:"Tafel",eta_ohm:"j–η<sub>ohm</sub>",eta_act:"j–η<sub>act</sub>",eta_mt:"j–η<sub>mt</sub>"},
     err_cols:"needs ≥3 numeric columns (Current, Voltage, Resistance).",
     err_empty:"no valid numeric rows found.",
     err_area:"Electrode area must be greater than 0.",
@@ -270,18 +310,21 @@ const LANG = {
     ok_fit:"Tafel fit done",imp:"file(s) imported",need_fit:"Run the Tafel fit first.",
     ok_fitall:"Fitted {n}/{m} files",fail_some:"{n} could not be fitted (check each file's range)."},
   JA:{
+    sub:"過電圧解析 · IR-free · Tafel · ブラウザ完結",
     files:"ファイル管理",drop:'CSVをドラッグ&ドロップ、または<b>クリックで読込</b>',
-    params:"パラメータ（選択中ファイル）",area:"電極面積 [cm²]",theo:"理論電圧 [V]",
+    params:"パラメータ（選択中ファイル）",area:"電極面積 [cm²]",theo:"理論電圧 E₀ [V]",
     range:"Tafel近似範囲（log₁₀ j）",fit:"2 · 近似実行（選択中）",fitAll:"⚡ 全ファイルを一括近似",
     pick:"◎ グラフ上で範囲指定（2クリック）",
-    export:"書き出し",expA:"選択中をCSV出力",expB:"全件一括出力",expS:"サマリーをCSV出力",
+    axes:"グラフ軸の設定",axMin:"最小",axMax:"最大",axMajor:"主単位",axMinor:"補助単位",
+    axApply:"適用",axReset:"自動",axHintLog:"Tafelプロットのx軸はlog₁₀。主/補助単位は decade（桁）単位です。",
+    export:"書き出し",expA:"選択中を出力（.xlsx）",expB:"全件一括出力",expS:"サマリー出力（.xlsx）",
     summary:"解析結果サマリー（全ファイル）",theory:"▾ 理論と数式（実装根拠）",
     hint:'CSV（列: <b>電流[A], 電圧[V], 内部抵抗[mΩ]</b>）を読み込んで開始します。',
     pickHint:'Tafelプロット上を<b>2点クリック</b>すると近似範囲が入力されます。',
     lang:"English",
     cols:["ファイル","面積 [cm²]","Tafel勾配 b [V/dec]","切片 a [V]","R²","状態"],
     st_ok:"完了",st_no:"未実行",
-    g:{jv:"j–V",jv_ir:"j–V (IR-Free)",tafel:"Tafel",eta_react:"η_react",eta_act:"η_act",eta_mt:"η_mt"},
+    g:{jv:"j–V",jv_ir:"j–V (IR-free)",eta_react:"j–η<sub>react</sub>",tafel:"Tafel",eta_ohm:"j–η<sub>ohm</sub>",eta_act:"j–η<sub>act</sub>",eta_mt:"j–η<sub>mt</sub>"},
     err_cols:"には数値3列（電流・電圧・抵抗）が必要です。",
     err_empty:"有効な数値データが見つかりませんでした。",
     err_area:"電極面積は0より大きい値を入力してください。",
@@ -337,15 +380,16 @@ function parseCSV(text){
   return {cur,vol,res};
 }
 
-/* ---------- per-file derived arrays (Steps 2,3,5,7,9,11) ---------- */
+/* ---------- per-file derived arrays ---------- */
 function derive(d){
   const n=d.cur.length;
-  const j=new Array(n), irf=new Array(n);
+  const j=new Array(n), irf=new Array(n), ohm=new Array(n);
   for(let i=0;i<n;i++){
-    j[i]=d.cur[i]/d.area;                       // Step 2: j = I / A
-    irf[i]=d.vol[i]+(j[i]*d.area*d.res[i]);     // Step 3: V_IR-Free = V_raw + j·A·R
+    j[i]=d.cur[i]/d.area;                       // Step 1: j = I / A
+    ohm[i]=j[i]*d.area*d.res[i];                // Step 2: η_ohm = j·A·R ( = I·R )
+    irf[i]=d.vol[i]+ohm[i];                     // Step 2: V_free = V_raw + j·A·R
   }
-  return {j,irf};
+  return {j,irf,ohm};
 }
 
 /* ---------- Tafel fit (Step 4) ---------- */
@@ -359,11 +403,13 @@ function fitFile(d){
   for(let i=0;i<j.length;i++){
     if(j[i]<=0) continue;
     const lj=log10(j[i]);
-    if(lj>=lo && lj<=hi){ X.push(lj); Y.push(irf[i]); }   // 電荷移動律速領域を抽出
+    // Step 4-5: Tafel plot is η_react vs log₁₀ j. Fit η_react = a + b·log₁₀ j on the
+    // charge-transfer (linear) region [fmin, fmax].  slope = b (Tafel slope, V/dec), intercept = a.
+    if(lj>=lo && lj<=hi){ X.push(lj); Y.push(d.theo - irf[i]); }   // η_react = E0 − V_free
   }
   if(X.length<2) return {ok:false, err:T().err_pts};
-  const {slope,intercept,r2}=linregress(X,Y);             // Step 4: OLS
-  d.slope=slope; d.intercept=intercept; d.r2=r2; d.fitDone=true;
+  const {slope,intercept,r2}=linregress(X,Y);             // OLS on η_react vs log₁₀ j
+  d.slope=slope; d.intercept=intercept; d.r2=r2; d.fitDone=true;  // b=slope, a=intercept
   return {ok:true, r2};
 }
 
@@ -464,12 +510,12 @@ function renderSummary(){
 }
 
 /* ---------- graph mode buttons ---------- */
-const GMODES=["jv","jv_ir","tafel","eta_react","eta_act","eta_mt"];
+const GMODES=["jv","jv_ir","eta_react","tafel","eta_ohm","eta_act","eta_mt"];
 function renderGModes(){
   const box=$("gmodes"); box.innerHTML="";
   GMODES.forEach(m=>{
     const b=document.createElement("button");
-    b.textContent=T().g[m];
+    b.innerHTML=T().g[m];
     b.className=(m===graph?"on":"")+((m.startsWith("eta"))?" etamode":"");
     b.onclick=()=>{graph=m;renderGModes();plot();};
     box.appendChild(b);
@@ -498,52 +544,79 @@ function baseLayout(xt,yt,xlog){
     hovermode:"closest", hoverlabel:{bgcolor:c.surface,bordercolor:c.line,font:{color:c.ink}}
   };
 }
+/* ---------- axis settings (Excel-like: min/max + major/minor ticks) ---------- */
+function axNum(id){ const v=parseFloat($(id).value); return isFinite(v)?v:null; }
+function applyAxes(layout, xlog){
+  const xmin=axNum("axXmin"), xmax=axNum("axXmax"), xmaj=axNum("axXmajor"), xmin2=axNum("axXminor");
+  const ymin=axNum("axYmin"), ymax=axNum("axYmax"), ymaj=axNum("axYmajor"), ymin2=axNum("axYminor");
+  const g=layout.xaxis.gridcolor;
+  if(xmin!=null && xmax!=null && xmax>xmin){
+    layout.xaxis.range = xlog ? [log10(xmin), log10(xmax)] : [xmin, xmax];
+    layout.xaxis.autorange=false;
+  }
+  if(xmaj!=null && xmaj>0) layout.xaxis.dtick=xmaj;
+  if(xmin2!=null && xmin2>0) layout.xaxis.minor={dtick:xmin2, showgrid:true, gridcolor:g, ticks:"outside"};
+  if(ymin!=null && ymax!=null && ymax>ymin){ layout.yaxis.range=[ymin,ymax]; layout.yaxis.autorange=false; }
+  if(ymaj!=null && ymaj>0) layout.yaxis.dtick=ymaj;
+  if(ymin2!=null && ymin2>0) layout.yaxis.minor={dtick:ymin2, showgrid:true, gridcolor:g, ticks:"outside"};
+}
+
 function plot(){
   const traces=[]; let xt="Current Density j [A/cm²]", yt="", xlog=false;
   const vis=files.filter(d=>d.visible);
   vis.forEach(d=>{
-    const {j,irf}=derive(d);
-    const n=j.length, jv=[],vv=[],ji=[],ir=[],jp=[],lj=[];
-    for(let i=0;i<n;i++){
-      jv.push(j[i]); vv.push(d.vol[i]); ir.push(irf[i]);
-      if(j[i]>0){ jp.push(j[i]); lj.push(log10(j[i])); }
-    }
+    const {j,irf,ohm}=derive(d);
+    const n=j.length;
     const C=d.color, isAct=(d===files[active]);   // 選択中ファイルを強調
     const base={mode:"lines+markers",name:d.name,
       marker:{size:isAct?7:6,color:C},
       line:{color:C,width:isAct?2.6:1.6},
       opacity:isAct?1:0.5,
       hovertemplate:"%{x:.4g}, %{y:.4g}<extra>"+d.name+"</extra>"};
-    if(graph==="jv"){ yt="Voltage [V]";
-      traces.push({...base,x:jv,y:vv});
-    }else if(graph==="jv_ir"){ yt="IR-Free Voltage [V]";
-      traces.push({...base,x:jv,y:ir});
-    }else if(graph==="tafel"){ yt="IR-Free Voltage [V]"; xlog=true;
-      const jpos=[],vpos=[]; for(let i=0;i<n;i++) if(j[i]>0){jpos.push(j[i]);vpos.push(irf[i]);}
-      traces.push({...base,mode:"markers",x:jpos,y:vpos});
-      if(d.fitDone){ // 近似直線: V = b·log10(j) + a
+
+    if(graph==="jv"){ yt="Voltage V [V]";
+      const x=[],y=[]; for(let i=0;i<n;i++){x.push(j[i]);y.push(d.vol[i]);}
+      traces.push({...base,x,y});
+
+    }else if(graph==="jv_ir"){ yt="IR-free Voltage V<sub>free</sub> [V]";
+      const x=[],y=[]; for(let i=0;i<n;i++){x.push(j[i]);y.push(irf[i]);}
+      traces.push({...base,x,y});
+
+    }else if(graph==="eta_ohm"){ yt="η<sub>ohm</sub> [V]";   // ohmic overpotential = j·A·R
+      const x=[],y=[]; for(let i=0;i<n;i++){x.push(j[i]);y.push(ohm[i]);}
+      traces.push({...base,x,y});
+
+    }else if(graph==="tafel"){ yt="η<sub>react</sub> [V]"; xlog=true;   // Tafel: η_react vs log₁₀ j
+      const xj=[],yr=[]; for(let i=0;i<n;i++) if(j[i]>0){ xj.push(j[i]); yr.push(d.theo-irf[i]); }
+      traces.push({...base,mode:"markers",x:xj,y:yr});
+      if(d.fitDone){ // fit line: η_react = a + b·log₁₀ j
         const lo=Math.min(d.fmin,d.fmax)-0.5, hi=Math.max(d.fmin,d.fmax)+0.5;
-        const xf=[],yf=[]; for(let k=0;k<=100;k++){const L=lo+(hi-lo)*k/100;const x=Math.pow(10,L);
-          xf.push(x); yf.push(d.slope*L+d.intercept);}
+        const xf=[],yf=[]; for(let k=0;k<=100;k++){const L=lo+(hi-lo)*k/100;
+          xf.push(Math.pow(10,L)); yf.push(d.slope*L+d.intercept);}
         traces.push({x:xf,y:yf,mode:"lines",line:{color:C,width:2,dash:"dash"},
           opacity:isAct?1:0.5,name:d.name+" fit",hoverinfo:"skip",showlegend:false});
       }
-    }else if(graph.startsWith("eta")){
-      if(!d.fitDone) return; // 理論注記: η_act/η_mt は近似必須
-      const er=[],ea=[],em=[],jx=[];
+
+    }else if(graph==="eta_react"){ yt="η<sub>react</sub> [V]";   // linear j–η_react (no fit needed)
+      const x=[],y=[]; for(let i=0;i<n;i++){ if(j[i]<=0) continue; x.push(j[i]); y.push(d.theo-irf[i]); }
+      traces.push({...base,x,y});
+
+    }else if(graph==="eta_act"||graph==="eta_mt"){
+      if(!d.fitDone) return;   // η_act / η_mt は Tafel 近似が必須
+      const x=[],ya=[],ym=[];
       for(let i=0;i<n;i++){ if(j[i]<=0) continue;
         const L=log10(j[i]);
-        const eta_react=d.theo-irf[i];            // Step 7
-        const eta_act=d.theo-(d.slope*L+d.intercept); // Step 9
-        const eta_mt=eta_react-eta_act;           // Step 11
-        jx.push(j[i]); er.push(eta_react); ea.push(eta_act); em.push(eta_mt);
+        const eta_react=d.theo-irf[i];
+        const eta_act=d.slope*L+d.intercept;   // η_act = a + b·log₁₀ j (η_react fit extrapolated)
+        const eta_mt=eta_react-eta_act;        // η_mt = η_react − η_act
+        x.push(j[i]); ya.push(eta_act); ym.push(eta_mt);
       }
-      if(graph==="eta_react"){ yt="η_react [V]"; traces.push({...base,x:jx,y:er}); }
-      if(graph==="eta_act"){ yt="η_act [V]"; traces.push({...base,x:jx,y:ea}); }
-      if(graph==="eta_mt"){ yt="η_mt [V]"; traces.push({...base,x:jx,y:em}); }
+      if(graph==="eta_act"){ yt="η<sub>act</sub> [V]"; traces.push({...base,x,y:ya}); }
+      else { yt="η<sub>mt</sub> [V]"; traces.push({...base,x,y:ym}); }
     }
   });
   const layout=baseLayout(xt,yt,xlog);
+  applyAxes(layout,xlog);
   Plotly.react("plot",traces,layout,{responsive:true,displaylogo:false,
     modeBarButtonsToRemove:["select2d","lasso2d"]});
   // click-to-pick range (Tafel only)
@@ -562,51 +635,70 @@ function plot(){
   });
 }
 
-/* ---------- export (matches Python _get_export_df) ---------- */
-function buildExportCSV(d){
+/* ---------- export (Excel .xlsx via SheetJS, CSV fallback) ----------
+   出力列: A=I[A] B=j[A/cm²] C=V[V] D=R[Ω] E=Vfree[V] F=ηohm[V] G=ηreact[V] H=ηact[V] I=ηmt[V] */
+const EXPORT_HEAD=["Current[A]","j[A/cm2]","Voltage[V]","Res[Ohm]","IR-Free[V]",
+                   "Eta_ohm[V]","Eta_react[V]","Eta_act[V]","Eta_mt[V]"];
+function buildRows(d){
+  const rows=[EXPORT_HEAD.slice()];
   const n=d.cur.length;
-  const head=["Current[A]","j[A/cm2]","Voltage[V]","Res[Ohm]","IR-Free[V]","Eta_react[V]","Eta_act[V]","Eta_mt[V]"];
-  const rows=[head.join(",")];
   for(let i=0;i<n;i++){
     const j=d.cur[i]/d.area;
-    const irf=d.vol[i]+(j*d.area*d.res[i]);
-    const eta_react=d.theo-irf;
-    let eta_act=NaN, eta_mt=NaN;
-    if(d.fitDone && j>0){ const L=log10(j); eta_act=d.theo-(d.slope*L+d.intercept); eta_mt=eta_react-eta_act; }
-    const g=v=>isFinite(v)?v:"";
-    rows.push([d.cur[i],j,d.vol[i],d.res[i],irf,eta_react,g(eta_act),g(eta_mt)].join(","));
+    const ohm=j*d.area*d.res[i];        // η_ohm = j·A·R
+    const irf=d.vol[i]+ohm;             // V_free
+    const eta_react=d.theo-irf;         // η_react = E0 − V_free
+    let eta_act="", eta_mt="";
+    if(d.fitDone && j>0){ const L=log10(j);
+      eta_act=d.slope*L+d.intercept;    // η_act = a + b·log₁₀ j
+      eta_mt=eta_react-eta_act; }       // η_mt = η_react − η_act
+    rows.push([d.cur[i],j,d.vol[i],d.res[i],irf,ohm,eta_react,eta_act,eta_mt]);
   }
-  return rows.join("\r\n");
+  return rows;
 }
-function buildSummaryCSV(){
-  const head=["File Name","Area [cm2]","Theoretical Voltage [V]","Tafel Slope b [V/dec]","Intercept a [V]","R2","Status"];
-  const rows=[head.join(",")];
+function buildSummaryRows(){
+  const rows=[["File Name","Area [cm2]","Theoretical Voltage E0 [V]",
+               "Tafel Slope b [V/dec]","Intercept a [V]","R2","Status"]];
   files.forEach(d=>{
     rows.push([d.name,d.area,d.theo,
       d.fitDone?d.slope:"",d.fitDone?d.intercept:"",d.fitDone?d.r2:"",
-      d.fitDone?"Completed":"Pending"].join(","));
+      d.fitDone?"Completed":"Pending"]);
   });
-  return rows.join("\r\n");
+  return rows;
 }
-function download(name,text){
-  const blob=new Blob(["﻿"+text],{type:"text/csv;charset=utf-8;"}); // utf-8-sig 相当
+const hasXLSX=()=>typeof XLSX!=="undefined";
+const baseName=name=>name.replace(/\.[^.]+$/,"");
+function saveXLSX(rows,fname){
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Analysis");
+  XLSX.writeFile(wb,fname);
+}
+function saveCSV(rows,fname){
+  const text=rows.map(r=>r.map(v=>(v===""||v==null)?"":v).join(",")).join("\r\n");
+  const blob=new Blob(["﻿"+text],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob); const a=document.createElement("a");
-  a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  a.href=url; a.download=fname; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportFile(d){
+  const rows=buildRows(d), base="analyzed_"+baseName(d.name);
+  hasXLSX()?saveXLSX(rows,base+".xlsx"):saveCSV(rows,base+".csv");
+}
+function exportSummary(){
+  const rows=buildSummaryRows();
+  hasXLSX()?saveXLSX(rows,"analysis_summary.xlsx"):saveCSV(rows,"analysis_summary.csv");
 }
 
 /* ---------- theory panel ---------- */
 function renderTheory(){
   $("theoryBody").innerHTML=`
-   <p>本ツールはマニュアル §1〜§3 の数理モデルに完全準拠して計算します。</p>
-   <div class="eq">Step 1 &nbsp; R [Ω] = R [mΩ] × 10⁻³</div>
-   <div class="eq">Step 2 &nbsp; j = I / A</div>
-   <div class="eq">Step 3 &nbsp; V<sub>IR-Free</sub> = V<sub>raw</sub> + ( j × A × R )</div>
-   <div class="eq">Step 4 &nbsp; V<sub>IR-Free</sub> = b · log₁₀ j + a &nbsp;(OLS, fmin ≤ log₁₀ j ≤ fmax)</div>
-   <div class="eq">Step 5 &nbsp; R² = 1 − Σ(yᵢ − f(xᵢ))² / Σ(yᵢ − ȳ)²</div>
-   <div class="eq">η<sub>react</sub> = V<sub>theo</sub> − V<sub>IR-Free</sub></div>
-   <div class="eq">η<sub>act</sub> = V<sub>theo</sub> − ( b · log₁₀ j + a )</div>
-   <div class="eq">η<sub>mt</sub> = η<sub>react</sub> − η<sub>act</sub></div>
-   <p>※ η_act / η_mt の表示には Tafel 近似（Run Tafel Fit）が必須です。</p>`;
+   <p>変更概要に基づく解析フロー（Tafel近似は η<sub>react</sub> vs log₁₀ j を直接近似）。</p>
+   <div class="eq">1 &nbsp; R [Ω] = R [mΩ] × 10⁻³ &nbsp;,&nbsp; j = I / A</div>
+   <div class="eq">2 &nbsp; η<sub>ohm</sub> = j·A·R ( = I·R ) &nbsp;,&nbsp; V<sub>free</sub> = V<sub>raw</sub> + η<sub>ohm</sub></div>
+   <div class="eq">3 &nbsp; η<sub>react</sub> = E₀ − V<sub>free</sub> &nbsp;(E₀ default 1.23 V)</div>
+   <div class="eq">4 &nbsp; Tafel plot: η<sub>react</sub> vs log₁₀ j</div>
+   <div class="eq">5 &nbsp; fit η<sub>react</sub> = a + b·log₁₀ j &nbsp;(OLS, fmin ≤ log₁₀ j ≤ fmax) → η<sub>act</sub> = a + b·log₁₀ j</div>
+   <div class="eq">6 &nbsp; η<sub>mt</sub> = η<sub>react</sub> − η<sub>act</sub></div>
+   <div class="eq">R² = 1 − Σ(yᵢ − f(xᵢ))² / Σ(yᵢ − ȳ)²</div>
+   <p>b は Tafel 勾配 [V/decade]、a は切片。※ η_act / η_mt の表示には Tafel 近似が必須です。</p>`;
 }
 
 /* ---------- toast ---------- */
@@ -626,6 +718,9 @@ function applyLang(){
   $("t_export").textContent=d.export; $("expActive").textContent=d.expA;
   $("expBatch").textContent=d.expB; $("expSummary").textContent=d.expS;
   $("t_summary").textContent=d.summary; $("t_theory").textContent="▾ "+d.theory;
+  $("t_axes").textContent=d.axes; $("axApply").textContent=d.axApply; $("axReset").textContent=d.axReset;
+  $("t_axHint").textContent=d.axHintLog;
+  document.querySelectorAll(".axlbl").forEach(s=>{ s.textContent=d[s.dataset.k]||s.textContent; });
   $("langBtn").textContent=d.lang;
   $("t_hint").innerHTML = clickMode ? d.pickHint : d.hint;
   renderGModes(); renderSummary(); renderTheory();
@@ -646,10 +741,12 @@ $("clickBtn").onclick=function(){
   if(clickMode){ graph="tafel"; renderGModes(); plot(); }
   $("t_hint").innerHTML = clickMode ? T().pickHint : T().hint;
 };
-$("expActive").onclick=()=>{ if(active<0)return; const d=files[active];
-  download("analyzed_"+d.name, buildExportCSV(d)); };
-$("expBatch").onclick=()=>{ files.forEach((d,i)=>setTimeout(()=>download("analyzed_"+d.name,buildExportCSV(d)), i*250)); };
-$("expSummary").onclick=()=>download("analysis_summary.csv", buildSummaryCSV());
+$("expActive").onclick=()=>{ if(active<0)return; exportFile(files[active]); };
+$("expBatch").onclick=()=>{ files.forEach((d,i)=>setTimeout(()=>exportFile(d), i*350)); };
+$("expSummary").onclick=()=>exportSummary();
+$("axApply").onclick=()=>plot();
+$("axReset").onclick=()=>{ ["axXmin","axXmax","axXmajor","axXminor","axYmin","axYmax","axYmajor","axYminor"]
+  .forEach(id=>$(id).value=""); plot(); };
 $("langBtn").onclick=()=>{ lang=(lang==="JA"?"EN":"JA"); applyLang(); };
 
 /* init */
